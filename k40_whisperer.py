@@ -240,6 +240,8 @@ class Application(Frame):
         self.mirror       = BooleanVar()
         self.rotate       = BooleanVar()
         self.negate       = BooleanVar()
+        self.segment_raster = BooleanVar()
+        self.segment_raster.set(True)
         self.inputCSYS    = BooleanVar()
         self.HomeUR       = BooleanVar()
         self.engraveUP    = BooleanVar()
@@ -1011,6 +1013,7 @@ class Application(Frame):
 
         header.append('(k40_whisperer_set comb_engrave  %s )'  %( int(self.comb_engrave.get())  ))
         header.append('(k40_whisperer_set comb_vector   %s )'  %( int(self.comb_vector.get())   ))
+        header.append('(k40_whisperer_set segment_raster  %s )'  %( int(self.segment_raster.get())  ))
         header.append('(k40_whisperer_set zoom2image    %s )'  %( int(self.zoom2image.get())    ))
         header.append('(k40_whisperer_set rotary        %s )'  %( int(self.rotary.get())        ))
         header.append('(k40_whisperer_set reduced_mem   %s )'  %( int(self.reduced_mem.get())   ))
@@ -2343,36 +2346,88 @@ class Application(Frame):
                     image_name = os.path.expanduser("~")+"/IMAGE.png"
                     image_temp.save(image_name,"PNG")
 
-                Reng_np = image_temp.load()
-                wim,him = image_temp.size
-                del image_temp
-                #######################################
-                x=0
-                y=0
-                loop=1
-                LENGTH=0
-                n_scanlines = 0 
-                
-                my_hull = hull2D()
-                bignumber = 9999999;
-                Raster_step = int(self.get_raster_step_1000in())
-                timestamp=0
-                im_height_mils = int(him/self.input_dpi*1000.0)
-                for i_step in range(0,im_height_mils,Raster_step):
-                    i=floor(i_step*self.input_dpi/1000.0)
-                    #print(i_step,i)
-                    stamp=int(3*time()) #update every 1/3 of a second
-                    if (stamp != timestamp):
-                        timestamp=stamp #interlock
-                        self.statusMessage.set("Creating Scan Lines: %.1f %%" %( (100.0*i)/him ) )
-                        self.master.update()
-                    if self.stop[0]==True:
-                        raise Exception("Action stopped by User.")
-                    line = []
-                    cnt=1
-                    LEFT  = bignumber;
-                    RIGHT =-bignumber;
-                    for j in range(1,wim):
+                # Check if raster segmentation is enabled
+                if self.segment_raster.get():
+                    # Segment the image into separate regions
+                    regions = self.segment_raster_image(image_temp, min_region_size=100)
+                    
+                    if regions:
+                        # Sort regions by position (left to right, top to bottom)
+                        regions.sort(key=lambda r: (r['center_y'], r['center_x']))
+                        
+                        # Process each region separately
+                        global_loop = 1
+                        for i, region in enumerate(regions):
+                            self.statusMessage.set("Processing Region %d of %d" % (i+1, len(regions)))
+                            self.master.update()
+                            
+                            region_ecoords = self.process_raster_region(image_temp, region, cutoff)
+                            
+                            # Adjust loop numbers to be globally unique
+                            for coord in region_ecoords:
+                                if len(coord) > 2:
+                                    coord[2] = coord[2] + global_loop
+                            
+                            # Find the highest loop number used in this region
+                            max_loop = 0
+                            for coord in region_ecoords:
+                                if len(coord) > 2:
+                                    max_loop = max(max_loop, coord[2])
+                            
+                            global_loop = max_loop
+                            ecoords.extend(region_ecoords)
+                        
+                        # Calculate overall length and scanlines
+                        LENGTH = 0
+                        n_scanlines = 0
+                        hcoords = []
+                        for region in regions:
+                            bbox = region['bbox']
+                            min_x, min_y, max_x, max_y = bbox
+                            LENGTH += (max_x - min_x) / self.input_dpi * (max_y - min_y) * 0.01  # Rough estimate
+                            n_scanlines += (max_y - min_y)
+                            hcoords.extend([[min_x/self.input_dpi, min_y/self.input_dpi], 
+                                           [max_x/self.input_dpi, max_y/self.input_dpi]])
+                        
+                        if hcoords != []:
+                            my_hull = hull2D()
+                            hcoords = my_hull.convexHullecoords(hcoords)
+                    else:
+                        # No regions found, process normally
+                        self.segment_raster.set(False)
+                        
+                if not self.segment_raster.get():
+                    # Original raster processing logic
+                    Reng_np = image_temp.load()
+                    wim,him = image_temp.size
+                    del image_temp
+                    #######################################
+                    x=0
+                    y=0
+                    loop=1
+                    LENGTH=0
+                    n_scanlines = 0 
+                    
+                    my_hull = hull2D()
+                    bignumber = 9999999;
+                    Raster_step = int(self.get_raster_step_1000in())
+                    timestamp=0
+                    im_height_mils = int(him/self.input_dpi*1000.0)
+                    for i_step in range(0,im_height_mils,Raster_step):
+                        i=floor(i_step*self.input_dpi/1000.0)
+                        #print(i_step,i)
+                        stamp=int(3*time()) #update every 1/3 of a second
+                        if (stamp != timestamp):
+                            timestamp=stamp #interlock
+                            self.statusMessage.set("Creating Scan Lines: %.1f %%" %( (100.0*i)/him ) )
+                            self.master.update()
+                        if self.stop[0]==True:
+                            raise Exception("Action stopped by User.")
+                        line = []
+                        cnt=1
+                        LEFT  = bignumber;
+                        RIGHT =-bignumber;
+                        for j in range(1,wim):
                         if (Reng_np[j,i] == Reng_np[j-1,i]):
                             cnt = cnt+1
                         else:
@@ -2385,37 +2440,37 @@ class Application(Frame):
                                 
                             line.append((cnt,laser))
                             cnt=1
-                    if Reng_np[j-1,i] > cutoff:
+                        if Reng_np[j-1,i] > cutoff:
                         laser = "U"
                     else:
                         laser = "D"
                         LEFT  = min(j-cnt,LEFT)
                         RIGHT = max(j,RIGHT)
                         
-                    line.append((cnt,laser))
-                    if LEFT != bignumber and RIGHT != -bignumber:
-                        LENGTH = LENGTH + (RIGHT - LEFT)/self.input_dpi
-                        n_scanlines = n_scanlines + 1
-                    
-                    y=(im_height_mils-i_step)/1000.0
-                    x=0
-                    if LEFT != bignumber:
-                        hcoords.append([LEFT/self.input_dpi,y])
-                    if RIGHT != -bignumber:
-                        hcoords.append([RIGHT/self.input_dpi,y])
-                    if hcoords!=[]:
-                        hcoords = my_hull.convexHullecoords(hcoords)
+                        line.append((cnt,laser))
+                        if LEFT != bignumber and RIGHT != -bignumber:
+                            LENGTH = LENGTH + (RIGHT - LEFT)/self.input_dpi
+                            n_scanlines = n_scanlines + 1
                         
-                    rng = list(range(0,len(line),1))
-                        
-                    for i in rng:
-                        seg = line[i]
-                        delta = seg[0]/self.input_dpi
-                        if seg[1]=="D":
-                            loop=loop+1
-                            ecoords.append([x      ,y,loop])
-                            ecoords.append([x+delta,y,loop])
-                        x = x + delta
+                        y=(im_height_mils-i_step)/1000.0
+                        x=0
+                        if LEFT != bignumber:
+                            hcoords.append([LEFT/self.input_dpi,y])
+                        if RIGHT != -bignumber:
+                            hcoords.append([RIGHT/self.input_dpi,y])
+                        if hcoords!=[]:
+                            hcoords = my_hull.convexHullecoords(hcoords)
+                            
+                        rng = list(range(0,len(line),1))
+                            
+                        for i in rng:
+                            seg = line[i]
+                            delta = seg[0]/self.input_dpi
+                            if seg[1]=="D":
+                                loop=loop+1
+                                ecoords.append([x      ,y,loop])
+                                ecoords.append([x+delta,y,loop])
+                            x = x + delta
                 self.RengData.set_ecoords(ecoords,data_sorted=True)
                 self.RengData.len=LENGTH
                 self.RengData.n_scanlines = n_scanlines
@@ -2452,6 +2507,158 @@ class Application(Frame):
             for j in range(1,wim):
                 im_rotated_np[i,wim-j] = image_in_np[j,i]
         return im_rotated
+    
+    def segment_raster_image(self, image_temp, min_region_size=100):
+        """
+        Segment raster image into separate regions using flood fill algorithm.
+        Returns list of (region_bbox, region_mask) tuples.
+        """
+        regions = []
+        wim, him = image_temp.size
+        
+        # Create a copy for flood fill processing
+        segmentation_image = image_temp.copy()
+        seg_pixels = segmentation_image.load()
+        
+        # Create visited array
+        visited = [[False for _ in range(wim)] for _ in range(him)]
+        
+        def flood_fill(start_x, start_y):
+            """Flood fill to find connected region"""
+            stack = [(start_x, start_y)]
+            region_pixels = []
+            min_x = min_y = float('inf')
+            max_x = max_y = 0
+            
+            while stack:
+                x, y = stack.pop()
+                if (x < 0 or x >= wim or y < 0 or y >= him or 
+                    visited[y][x] or seg_pixels[x, y] == 255):  # Skip white pixels
+                    continue
+                    
+                visited[y][x] = True
+                region_pixels.append((x, y))
+                
+                # Update bounding box
+                min_x = min(min_x, x)
+                max_x = max(max_x, x)
+                min_y = min(min_y, y)
+                max_y = max(max_y, y)
+                
+                # Add neighbors to stack
+                for dx, dy in [(-1,0), (1,0), (0,-1), (0,1)]:
+                    nx, ny = x + dx, y + dy
+                    if (0 <= nx < wim and 0 <= ny < him and 
+                        not visited[ny][nx] and seg_pixels[nx, ny] < 255):
+                        stack.append((nx, ny))
+            
+            return region_pixels, (min_x, min_y, max_x, max_y)
+        
+        # Find all connected regions
+        for y in range(him):
+            for x in range(wim):
+                if not visited[y][x] and seg_pixels[x, y] < 255:  # Black pixel not visited
+                    region_pixels, bbox = flood_fill(x, y)
+                    
+                    # Only keep regions above minimum size
+                    if len(region_pixels) >= min_region_size:
+                        # Create mask for this region
+                        min_x, min_y, max_x, max_y = bbox
+                        region_width = max_x - min_x + 1
+                        region_height = max_y - min_y + 1
+                        
+                        # Create region mask
+                        region_mask = Image.new('1', (region_width, region_height), 1)  # White background
+                        mask_pixels = region_mask.load()
+                        
+                        for px, py in region_pixels:
+                            mask_pixels[px - min_x, py - min_y] = 0  # Black for region
+                        
+                        regions.append({
+                            'bbox': bbox,
+                            'mask': region_mask,
+                            'pixel_count': len(region_pixels),
+                            'center_x': (min_x + max_x) / 2,
+                            'center_y': (min_y + max_y) / 2
+                        })
+        
+        return regions
+
+    def process_raster_region(self, image_temp, region_info, cutoff=128):
+        """
+        Process a single region of the raster image.
+        Returns ecoords for this region only.
+        """
+        ecoords = []
+        bbox = region_info['bbox']
+        mask = region_info['mask']
+        min_x, min_y, max_x, max_y = bbox
+        
+        # Get the region portion of the image
+        # PIL crop expects (left, top, right, bottom) where right/bottom are exclusive
+        crop_bbox = (min_x, min_y, max_x + 1, max_y + 1)
+        region_image = image_temp.crop(crop_bbox)
+        Reng_np = region_image.load()
+        mask_pixels = mask.load()
+        
+        region_width = max_x - min_x + 1
+        region_height = max_y - min_y + 1
+        
+        # Convert image coordinates to physical coordinates
+        # Use the original full image height for proper Y coordinate calculation
+        full_image_height = image_temp.size[1]
+        im_height_mils = int(full_image_height/self.input_dpi*1000.0)
+        
+        x = 0
+        y = 0
+        loop = 1
+        
+        Raster_step = int(self.get_raster_step_1000in())
+        
+        for i_step in range(0, im_height_mils, Raster_step):
+            i = floor(i_step * self.input_dpi / 1000.0)
+            if i >= region_height:
+                break
+                
+            line = []
+            cnt = 1
+            
+            # Process this scanline within the region (same logic as original)
+            for j in range(1, region_width):
+                if (Reng_np[j, i] == Reng_np[j-1, i]):
+                    cnt = cnt + 1
+                else:
+                    if Reng_np[j-1, i] > cutoff:
+                        laser = "U"
+                    else:
+                        laser = "D"
+                    line.append((cnt, laser))
+                    cnt = 1
+            
+            # Handle last pixel (same logic as original)
+            if region_width > 0:
+                if Reng_np[region_width-1, i] > cutoff:
+                    laser = "U"
+                else:
+                    laser = "D"
+                line.append((cnt, laser))
+            
+            # Convert line segments to coordinates
+            # Physical Y coordinate: convert i (region-relative) to full image coordinates
+            full_image_i = i + min_y
+            full_image_i_step = full_image_i * 1000.0 / self.input_dpi
+            y = (im_height_mils - full_image_i_step) / 1000.0
+            x = min_x / self.input_dpi  # Start at region's left edge
+            
+            for seg in line:
+                delta = seg[0] / self.input_dpi
+                if seg[1] == "D":
+                    loop = loop + 1
+                    ecoords.append([x, y, loop])
+                    ecoords.append([x + delta, y, loop])
+                x = x + delta
+        
+        return ecoords
     
     def get_raster_step_1000in(self):
         val_in = float(self.rast_step.get())
@@ -2728,6 +2935,8 @@ class Application(Frame):
                         self.comb_engrave.set(line[line.find("comb_engrave"):].split()[1])
                     elif "comb_vector"  in line:
                         self.comb_vector.set(line[line.find("comb_vector"):].split()[1])
+                    elif "segment_raster"  in line:
+                        self.segment_raster.set(line[line.find("segment_raster"):].split()[1])
                     elif "zoom2image"  in line:
                         self.zoom2image.set(line[line.find("zoom2image"):].split()[1])
 
@@ -5571,6 +5780,15 @@ class Application(Frame):
         self.Checkbutton_Halftone.place(x=w_label+22, y=D_Yloc, width=75, height=23)
         self.Checkbutton_Halftone.configure(variable=self.halftone)
         self.halftone.trace_variable("w", self.menu_View_Refresh_Callback)
+
+        ############
+        D_Yloc=D_Yloc+D_dY
+        self.Label_Segment_Raster = Label(raster_settings,text="Segment Raster Regions")
+        self.Label_Segment_Raster.place(x=xd_label_L, y=D_Yloc, width=w_label, height=21)
+        self.Checkbutton_Segment_Raster = Checkbutton(raster_settings,text=" ", anchor=W, command=self.Set_Input_States_RASTER)
+        self.Checkbutton_Segment_Raster.place(x=w_label+22, y=D_Yloc, width=75, height=23)
+        self.Checkbutton_Segment_Raster.configure(variable=self.segment_raster)
+        self.segment_raster.trace_variable("w", self.View_Refresh_and_Reset_RasterPath)
 
         ############
         D_Yloc=D_Yloc+D_dY 

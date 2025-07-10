@@ -734,6 +734,15 @@ class Application(Frame):
         self.comb_vector.trace_variable("w", self.menu_View_Refresh_Callback) 
         #####
         
+        #####
+        self.separator_segment = Frame(self.master, height=2, bd=1, relief=SUNKEN)
+        
+        self.Label_Segment_Raster_adv = Label(self.master,text="Segment Raster Regions")
+        self.Checkbutton_Segment_Raster_adv = Checkbutton(self.master,text=" ", anchor=W)
+        self.Checkbutton_Segment_Raster_adv.configure(variable=self.segment_raster)
+        self.segment_raster.trace_variable("w", self.View_Refresh_and_Reset_RasterPath)
+        #####
+        
         self.Label_Reng_passes = Label(self.master,text="Raster Eng. Passes")
         self.Entry_Reng_passes   = Entry(self.master,width="15")
         self.Entry_Reng_passes.configure(textvariable=self.Reng_passes,justify='center',fg="black")
@@ -4906,6 +4915,15 @@ class Application(Frame):
                         self.Checkbutton_Comb_Engrave_adv.place(x=Xadvanced+w_label_adv+2, y=adv_Yloc, width=25, height=23)
                         ####
                         
+                        ####
+                        adv_Yloc=adv_Yloc-15
+                        self.separator_segment.place(x=Xadvanced-1, y=adv_Yloc, width=wadv_use, height=2)
+                        
+                        adv_Yloc=adv_Yloc-25
+                        self.Label_Segment_Raster_adv.place(x=Xadvanced, y=adv_Yloc, width=w_label_adv, height=21)
+                        self.Checkbutton_Segment_Raster_adv.place(x=Xadvanced+w_label_adv+2, y=adv_Yloc, width=25, height=23)
+                        ####
+                        
                     else:
                         adv_Yloc=adv_Yloc-40
                         self.Label_Gcde_passes.place(x=Xadvanced, y=adv_Yloc, width=w_label_adv, height=21)
@@ -4945,6 +4963,10 @@ class Application(Frame):
                     self.Checkbutton_Comb_Engrave_adv.place_forget()
                     self.Label_Comb_Vector_adv.place_forget()
                     self.Checkbutton_Comb_Vector_adv.place_forget()
+                    
+                    self.separator_segment.place_forget()
+                    self.Label_Segment_Raster_adv.place_forget()
+                    self.Checkbutton_Segment_Raster_adv.place_forget()
 
 
                     self.Entry_Vcut_passes.place_forget()
@@ -5780,15 +5802,6 @@ class Application(Frame):
         self.Checkbutton_Halftone.place(x=w_label+22, y=D_Yloc, width=75, height=23)
         self.Checkbutton_Halftone.configure(variable=self.halftone)
         self.halftone.trace_variable("w", self.menu_View_Refresh_Callback)
-
-        ############
-        D_Yloc=D_Yloc+D_dY
-        self.Label_Segment_Raster = Label(raster_settings,text="Segment Raster Regions")
-        self.Label_Segment_Raster.place(x=xd_label_L, y=D_Yloc, width=w_label, height=21)
-        self.Checkbutton_Segment_Raster = Checkbutton(raster_settings,text=" ", anchor=W, command=self.Set_Input_States_RASTER)
-        self.Checkbutton_Segment_Raster.place(x=w_label+22, y=D_Yloc, width=75, height=23)
-        self.Checkbutton_Segment_Raster.configure(variable=self.segment_raster)
-        self.segment_raster.trace_variable("w", self.View_Refresh_and_Reset_RasterPath)
 
         ############
         D_Yloc=D_Yloc+D_dY 

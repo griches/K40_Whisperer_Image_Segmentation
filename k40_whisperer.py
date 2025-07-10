@@ -2401,6 +2401,13 @@ class Application(Frame):
                         if hcoords != []:
                             my_hull = hull2D()
                             hcoords = my_hull.convexHullecoords(hcoords)
+                        
+                        # Complete the segmented raster processing
+                        self.RengData.set_ecoords(ecoords,data_sorted=True)
+                        self.RengData.len=LENGTH
+                        self.RengData.n_scanlines = n_scanlines
+                        self.RengData.rpaths = True
+                        self.RengData.hull_coords = hcoords
                     else:
                         # No regions found, process normally
                         self.segment_raster.set(False)

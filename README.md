@@ -14,7 +14,7 @@ If you have two small images - one at the left edge and one at the right edge of
 ## Features
 
 - **Automatic Region Detection**: Uses flood-fill algorithm to identify separate image regions
-- **Configurable**: Enable/disable via checkbox in Raster Settings
+- **Configurable**: Enable/disable via checkbox in Advanced Settings
 - **Efficient Processing**: Only scans areas containing actual image data
 - **Preserves Image Quality**: Uses the same pixel processing as the original algorithm
 - **Settings Persistence**: Saves your preference for segmentation in design files
@@ -39,10 +39,9 @@ If you have two small images - one at the left edge and one at the right edge of
 
 1. Open K40 Whisperer
 2. Load your design file (SVG, DXF, etc.)
-3. Go to **Settings > Raster Settings**
-4. Check **"Segment Raster Regions"** to enable segmentation (enabled by default)
-5. Click **Rasterize** to process your image
-6. Click **Raster Engrave** to start engraving
+3. Check **"Show Advanced Settings"** to show the right panel
+4. Check **"Segment Raster Regions"** in Advanced Settings to enable segmentation (enabled by default)
+5. Click **Raster Engrave** to start engraving
 
 The status bar will show "Processing Region X of Y" as it works through each separate region.
 

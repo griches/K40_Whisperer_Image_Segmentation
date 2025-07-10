@@ -2428,25 +2428,25 @@ class Application(Frame):
                         LEFT  = bignumber;
                         RIGHT =-bignumber;
                         for j in range(1,wim):
-                        if (Reng_np[j,i] == Reng_np[j-1,i]):
-                            cnt = cnt+1
-                        else:
-                            if Reng_np[j-1,i]:
-                                laser = "U"
+                            if (Reng_np[j,i] == Reng_np[j-1,i]):
+                                cnt = cnt+1
                             else:
-                                laser = "D"
-                                LEFT  = min(j-cnt,LEFT)
-                                RIGHT = max(j,RIGHT)
-                                
-                            line.append((cnt,laser))
-                            cnt=1
+                                if Reng_np[j-1,i]:
+                                    laser = "U"
+                                else:
+                                    laser = "D"
+                                    LEFT  = min(j-cnt,LEFT)
+                                    RIGHT = max(j,RIGHT)
+                                    
+                                line.append((cnt,laser))
+                                cnt=1
                         if Reng_np[j-1,i] > cutoff:
-                        laser = "U"
-                    else:
-                        laser = "D"
-                        LEFT  = min(j-cnt,LEFT)
-                        RIGHT = max(j,RIGHT)
-                        
+                            laser = "U"
+                        else:
+                            laser = "D"
+                            LEFT  = min(j-cnt,LEFT)
+                            RIGHT = max(j,RIGHT)
+                            
                         line.append((cnt,laser))
                         if LEFT != bignumber and RIGHT != -bignumber:
                             LENGTH = LENGTH + (RIGHT - LEFT)/self.input_dpi

@@ -2361,8 +2361,9 @@ class Application(Frame):
                     regions = self.segment_raster_image(image_temp, min_region_size=100)
                     
                     if regions:
-                        # Sort regions by position (left to right, top to bottom)
-                        regions.sort(key=lambda r: (r['center_y'], r['center_x']))
+                        # Sort regions by position (left to right, then top to bottom)
+                        # This ensures clocks on the same row are processed together
+                        regions.sort(key=lambda r: (r['center_x'], r['center_y']))
                         
                         # Process each region separately
                         global_loop = 1
@@ -2526,77 +2527,67 @@ class Application(Frame):
     
     def segment_raster_image(self, image_temp, min_region_size=100):
         """
-        Segment raster image into separate regions using flood fill algorithm.
+        Segment raster image into separate regions using scipy connected components.
+        Uses morphological operations to group nearby components (like clock parts).
         Returns list of (region_bbox, region_mask) tuples.
         """
         regions = []
         wim, him = image_temp.size
         
-        # Create a copy for flood fill processing
-        segmentation_image = image_temp.copy()
-        seg_pixels = segmentation_image.load()
+        # Convert PIL image to numpy array (much faster than pixel access)
+        img_array = np.array(image_temp)
         
-        # Create visited array
-        visited = [[False for _ in range(wim)] for _ in range(him)]
+        # Create binary mask (True for black pixels, False for white)
+        if len(img_array.shape) == 2:  # Grayscale
+            binary_mask = img_array < 128
+        else:  # Color image
+            binary_mask = np.mean(img_array, axis=2) < 128
         
-        def flood_fill(start_x, start_y):
-            """Flood fill to find connected region"""
-            stack = [(start_x, start_y)]
-            region_pixels = []
-            min_x = min_y = float('inf')
-            max_x = max_y = 0
+        # Apply morphological dilation to connect nearby components (like clock parts)
+        # This helps group dots, circles, and hands of clocks together
+        dilation_size = max(2, int(min(wim, him) * 0.01))  # Scale with image size
+        structure = np.ones((dilation_size, dilation_size))
+        dilated_mask = ndimage.binary_dilation(binary_mask, structure=structure)
+        
+        # Use scipy connected component labeling on dilated image
+        labeled_array, num_features = ndimage.label(dilated_mask)
+        
+        # Get region properties for each labeled region
+        for region_id in range(1, num_features + 1):
+            # Find all pixels belonging to this region in the ORIGINAL (non-dilated) image
+            dilated_coords = np.where(labeled_array == region_id)
             
-            while stack:
-                x, y = stack.pop()
-                if (x < 0 or x >= wim or y < 0 or y >= him or 
-                    visited[y][x] or seg_pixels[x, y] == 255):  # Skip white pixels
-                    continue
-                    
-                visited[y][x] = True
-                region_pixels.append((x, y))
-                
-                # Update bounding box
-                min_x = min(min_x, x)
-                max_x = max(max_x, x)
-                min_y = min(min_y, y)
-                max_y = max(max_y, y)
-                
-                # Add neighbors to stack
-                for dx, dy in [(-1,0), (1,0), (0,-1), (0,1)]:
-                    nx, ny = x + dx, y + dy
-                    if (0 <= nx < wim and 0 <= ny < him and 
-                        not visited[ny][nx] and seg_pixels[nx, ny] < 255):
-                        stack.append((nx, ny))
+            # Get bounding box from dilated region
+            min_y, max_y = np.min(dilated_coords[0]), np.max(dilated_coords[0])
+            min_x, max_x = np.min(dilated_coords[1]), np.max(dilated_coords[1])
             
-            return region_pixels, (min_x, min_y, max_x, max_y)
-        
-        # Find all connected regions
-        for y in range(him):
-            for x in range(wim):
-                if not visited[y][x] and seg_pixels[x, y] < 255:  # Black pixel not visited
-                    region_pixels, bbox = flood_fill(x, y)
-                    
-                    # Only keep regions above minimum size
-                    if len(region_pixels) >= min_region_size:
-                        # Create mask for this region
-                        min_x, min_y, max_x, max_y = bbox
-                        region_width = max_x - min_x + 1
-                        region_height = max_y - min_y + 1
-                        
-                        # Create region mask
-                        region_mask = Image.new('1', (region_width, region_height), 1)  # White background
-                        mask_pixels = region_mask.load()
-                        
-                        for px, py in region_pixels:
-                            mask_pixels[px - min_x, py - min_y] = 0  # Black for region
-                        
-                        regions.append({
-                            'bbox': bbox,
-                            'mask': region_mask,
-                            'pixel_count': len(region_pixels),
-                            'center_x': (min_x + max_x) / 2,
-                            'center_y': (min_y + max_y) / 2
-                        })
+            # Extract original pixels within this bounding box
+            bbox_binary = binary_mask[min_y:max_y+1, min_x:max_x+1]
+            original_coords = np.where(bbox_binary)
+            pixel_count = len(original_coords[0])
+            
+            # Filter by minimum size (based on original pixels, not dilated)
+            if pixel_count >= min_region_size:
+                bbox = (min_x, min_y, max_x, max_y)
+                region_width = max_x - min_x + 1
+                region_height = max_y - min_y + 1
+                
+                # Create region mask using numpy (faster than PIL pixel access)
+                region_mask_array = np.ones((region_height, region_width), dtype=np.uint8) * 255
+                
+                # Set original (non-dilated) region pixels to black in the mask
+                region_mask_array[original_coords] = 0
+                
+                # Convert back to PIL image only when needed
+                region_mask = Image.fromarray(region_mask_array, mode='L').convert('1')
+                
+                regions.append({
+                    'bbox': bbox,
+                    'mask': region_mask,
+                    'pixel_count': pixel_count,
+                    'center_x': (min_x + max_x) / 2,
+                    'center_y': (min_y + max_y) / 2
+                })
         
         return regions
 
